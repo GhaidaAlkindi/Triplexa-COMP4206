@@ -2,30 +2,67 @@ import 'package:flutter/material.dart';
 import 'package:uitriplexa/sharedWidgets.dart';
 import 'package:uitriplexa/model/colorPalette.dart';
 import 'package:uitriplexa/pages/addPlace.dart';
+import '../model/Trip.dart';
+import 'package:firebase_database/firebase_database.dart';
+import '../services/database_service.dart';
 
 class dayPlanner extends StatefulWidget{
-  const dayPlanner({super.key});                                  //constructor
+  final String cityName;
+  final int cityDays;
+  final String cityKey;
+  const dayPlanner({super.key, this.cityName = 'City', this.cityDays = 1, this.cityKey = ''});                                  //constructor
   @override
   State<dayPlanner> createState() => dayPlannerState();          //a state for the day planner
 }
 class dayPlannerState extends State<dayPlanner>{
 
-  final int numOfDays = 6;                                        //total days for this city
   int selectedDay = 0;                                            //the currnt selected day index
   int navIndex = 2;                                               //days tab is higlighted in the nav bar
 
-  final List<String> dayDates = [                                 //the date for each day
-    'Thursday . April 10', 'Friday . April 11', 'Saturday . April 12',
-    'Sunday . April 13',   'Monday . April 14', 'Tuesday . April 15', ];
 
-  final List<List<Map<String, dynamic>>> dayPlaces = [            //places for each day
-    [ {'name': 'Senso-ji Temple',  'cost': 0,  'type': 'Landmark',   'icon': Icons.temple_buddhist_rounded, 'link': 'maps.google.com', 'note': 'Book tickets in advance to save time and get a discount'},
-      {'name': 'Ichiran Ramen',    'cost': 17, 'type': 'Restaurant', 'icon': Icons.restaurant_rounded,      'link': 'maps.google.com', 'note': ''},
-      {'name': 'TeamLab Planets',  'cost': 23, 'type': 'Activity',   'icon': Icons.celebration_rounded,     'link': 'maps.google.com', 'note': 'Book tickets in advance to save time and get a discount'}, ],
-    [ {'name': 'Shinjuku Gyoen',   'cost': 5,  'type': 'Landmark',   'icon': Icons.park_rounded,            'link': 'maps.google.com', 'note': ''}, ],
-    [], [], [], [],
-  ];
+  late List<List<Map<String, dynamic>>> dayPlaces;
 
+  @override
+  void initState() {
+    super.initState();
+    dayPlaces = List.generate(widget.cityDays, (_) => []);
+    _loadPlaces();
+  }
+
+  void _loadPlaces() {
+    DatabaseService.placesRef
+        .orderByChild('cityKey')
+        .equalTo(widget.cityKey)
+        .onValue
+        .listen((event) {
+      if (!mounted) return;
+      final data = event.snapshot.value;
+      final newDayPlaces = List.generate(widget.cityDays, (_) => <Map<String, dynamic>>[]);
+      if (data != null) {
+        final map = Map<String, dynamic>.from(data as Map);
+        for (final e in map.entries) {
+          final v = Map<String, dynamic>.from(e.value as Map);
+          final day = (v['dayNumber'] as int? ?? 1) - 1;
+          if (day >= 0 && day < widget.cityDays) {
+            newDayPlaces[day].add({...v, 'firebaseKey': e.key, 'icon': _iconFromType(v['type'] ?? '')});
+          }
+        }
+      }
+      setState(() => dayPlaces = newDayPlaces);
+    });
+  }
+
+  IconData _iconFromType(String type) {
+    switch (type) {
+      case 'Landmark':   return Icons.temple_buddhist_rounded;
+      case 'Restaurant': return Icons.restaurant_rounded;
+      case 'Activity':   return Icons.celebration_rounded;
+      case 'Hotel':      return Icons.hotel_rounded;
+      case 'Transport':  return Icons.directions_transit_rounded;
+      case 'Shopping':   return Icons.shopping_bag_rounded;
+      default:           return Icons.place_rounded;
+    }
+  }
   Color typeColor(String type){                                   //color for each place type tag
     switch(type){
       case 'Landmark':   return Colorpalette.steelBlue.withOpacity(0.15);
@@ -47,21 +84,50 @@ class dayPlannerState extends State<dayPlanner>{
       case 'Shopping':   return const Color(0xFFFF8A65);
       default: return Colors.grey;
     }}
-
-  Future<void> _openPlace(int index) async {                     //tap a place to edit it
+//tap a place to edit it
+  Future<void> _openPlace(int index) async {
+    final existing = dayPlaces[selectedDay][index];
     final result = await Navigator.push(context, PageRouteBuilder(
-      pageBuilder: (_, __, ___) => addPlace(existingPlace: dayPlaces[selectedDay][index]),
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero));
-    if (result != null) setState(() => dayPlaces[selectedDay][index] = result);
+        pageBuilder: (_, __, ___) => addPlace(existingPlace: existing),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero));
+    if (result != null && existing['firebaseKey'] != null) {
+      await DatabaseService.placesRef.child(existing['firebaseKey']).update({
+        'name':     result['name'],
+        'cost':     result['cost'],
+        'type':     result['type'],
+        'note':     result['note'] ?? '',
+        'link':     result['link'] ?? '',
+        'rating':   result['rating'] ?? 3,
+        'priority': result['priority'] ?? 'Must Visit',
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${result['name']} updated!'),
+              backgroundColor: Colorpalette.steelBlue, behavior: SnackBarBehavior.floating));
+    }
   }
-
-  Future<void> _addNewPlace() async {                            //add a new place to the day
+//add a new place to the day
+  Future<void> _addNewPlace() async {
     final result = await Navigator.push(context, PageRouteBuilder(
-      pageBuilder: (_, __, ___) => const addPlace(),
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero));
-    if (result != null) setState(() => dayPlaces[selectedDay].add(result));
+        pageBuilder: (_, __, ___) => const addPlace(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero));
+    if (result != null) {
+      await DatabaseService.placesRef.push().set({
+        'cityKey':   widget.cityKey,
+        'dayNumber': selectedDay + 1,
+        'name':      result['name'],
+        'cost':      result['cost'],
+        'type':      result['type'],
+        'note':      result['note'] ?? '',
+        'link':      result['link'] ?? '',
+        'rating':    result['rating'] ?? 3,
+        'priority':  result['priority'] ?? 'Must Visit',
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${result['name']} added!'),
+              backgroundColor: Colorpalette.sageGreen, behavior: SnackBarBehavior.floating));
+    }
   }
 
   Widget placeCard(Map<String, dynamic> place, int index){
@@ -86,9 +152,17 @@ class dayPlannerState extends State<dayPlanner>{
                 Row(children: [
                   Expanded(child: Text('${place['name']} · \$${place['cost']}',  //name and cost
                     style: const TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF444444)))),
-                  GestureDetector(                               //the X to remove a place
-                    onTap: (){},
-                    child: const Icon(Icons.close, size: 16, color: Colors.grey)),
+                  GestureDetector(        //the X to remove a place
+                      onTap: () async {
+                        final key = place['firebaseKey'];
+                        if (key != null) {
+                          await DatabaseService.placesRef.child(key).remove();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('${place['name']} removed'),
+                                  backgroundColor: Colorpalette.warmTerracotta, behavior: SnackBarBehavior.floating));
+                        }
+                      },
+                      child: const Icon(Icons.close, size: 16, color: Colors.grey)),
                 ],),
                 const SizedBox(height: 6),
                 Row(children: [
@@ -146,7 +220,7 @@ class dayPlannerState extends State<dayPlanner>{
       backgroundColor: Colorpalette.cream,                        //specify the background
       body: Column(
         children: [
-          Sharedwidgets.buildHeader('Tokyo', '6 days . 15 places'), //call the header from the shared methods
+          Sharedwidgets.buildHeader(widget.cityName, '${widget.cityDays} days', onClose: () => Navigator.pushReplacementNamed(context, '/cities')), //call the header from the shared methods
 
           const SizedBox(height: 12),
 
@@ -154,7 +228,7 @@ class dayPlannerState extends State<dayPlanner>{
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(children: [
-              for(int i=0; i<numOfDays; i++) ...[
+              for(int i=0; i<widget.cityDays; i++) ...[
                 if(i>0) const SizedBox(width: 8),
                 GestureDetector(
                   onTap: ()=> setState(()=> selectedDay = i),    //select the tapped day
@@ -181,7 +255,7 @@ class dayPlannerState extends State<dayPlanner>{
                 Padding(                                         //the date header
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                   child: Align(alignment: Alignment.centerLeft,
-                    child: Text(dayDates[selectedDay],
+                      child: Text('Day ${selectedDay + 1}',
                       style: const TextStyle(fontFamily: 'DMSans', fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500))),),
 
                 Expanded(child: ListView.separated(             //the list of places
