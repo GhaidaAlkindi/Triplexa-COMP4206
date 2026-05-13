@@ -8,7 +8,8 @@ class Sharedwidgets{
     return Container(
       width: double.infinity,                               //the top bar width is all covered
       decoration: const BoxDecoration(
-        color: Colorpalette.steelBlue, borderRadius: BorderRadius.vertical(bottom: Radius.circular(35))
+        color: Colorpalette.steelBlue, 
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(35))
       ),
       padding: const EdgeInsets.only(bottom: 20),           //space the bottom only
       child: SafeArea(
@@ -16,7 +17,21 @@ class Sharedwidgets{
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20), //left and right padding
           child:Column(crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 8,),
+              const SizedBox(height: 8),
+              if (onClose != null)                            // show X only if onClose is provided
+                Align(
+                  alignment: Alignment.topRight,
+                  child: GestureDetector(
+                    onTap: onClose,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(20)),
+                      child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
               Text(title, style: const TextStyle( fontFamily: 'Nunito',fontWeight: FontWeight.bold,
                 fontSize: 26, color: Colors.white),),       //print the ttile
               Text(details, style: const TextStyle( fontFamily: 'Nunito',
