@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'model/colorPalette.dart';
 import 'pages/login.dart';
 import 'pages/homePage.dart';
 import 'pages/trip.dart';
 import 'pages/dayPlanner.dart';
+import 'model/Trip.dart';
+
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const UITriplexaApp());
 }
 
@@ -21,8 +29,18 @@ class UITriplexaApp extends StatelessWidget{
         Widget page;
         switch (settings.name) {
           case '/home':       page = const trips();      break;
-          case '/cities':     page = const tripPage();   break;
-          case '/dayplanner': page = const dayPlanner(); break;
+          case '/cities':
+            final trip = settings.arguments as Trip?;
+            page = tripPage(trip: trip ?? Trip(name:'', dates:'', cities:0, days:0, flag:'', status:'planning'));
+            break;
+          case '/dayplanner':
+            final args = settings.arguments as Map<String, dynamic>?;
+            page = dayPlanner(
+              cityName: args?['cityName'] ?? 'City',
+              cityDays: args?['cityDays'] ?? 1,
+              cityKey:  args?['cityKey']  ?? '',
+            );
+            break;
           default:            page = const login();
         }
         return PageRouteBuilder(
